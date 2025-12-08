@@ -3,161 +3,183 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 import streamlit as st
 from dotenv import load_dotenv
-from pathlib import Path
 
-# Load environment variables from .env file
+# Load environment variables
 load_dotenv()
 
-
 class DatabaseConfig:
-    """Database configuration and connection management"""
+    """MongoDB configuration, connection handling, health checks, and index creation."""
 
     def __init__(self):
         self._client = None
         self._db = None
         self.database_name = os.getenv("DATABASE_NAME", "IA")
 
+    # ---- CONNECTION STRING ----
     @property
     def connection_string(self):
-        """Get MongoDB connection string from environment"""
-        # Try different environment variable names in order of preference
-        uri = (os.getenv("MONGO_URI") or 
-               os.getenv("MONGODB_URI") or 
-               os.getenv("DATABASE_URL") or
-               os.getenv("MONGODB_CONNECTION_STRING") or
-               os.getenv("DB_URI"))
-        
+        """Return MongoDB URI from environment, checking several variable names."""
+
+        # Priority list of possible variable names
+        possible_keys = [
+            "MONGO_URI",
+            "MONGODB_URI",
+            "DATABASE_URL",
+            "MONGODB_CONNECTION_STRING",
+            "DB_URI",
+        ]
+
+        uri = None
+        for key in possible_keys:
+            uri = os.getenv(key)
+            if uri:
+                break
+
         if not uri:
             st.error(
-                "MongoDB connection string not found. Please set one of: MONGO_URI, MONGODB_URI, DATABASE_URL, MONGODB_CONNECTION_STRING, or DB_URI environment variable."
+                "MongoDB connection string not found. "
+                "Set one of: MONGO_URI, MONGODB_URI, DATABASE_URL, "
+                "MONGODB_CONNECTION_STRING, or DB_URI."
             )
             return None
 
-        # Remove password from logs (security)
-        safe_uri = uri.replace(uri.split("://")[1].split("@")[0], "***:***")
+        # Mask credentials in logs (but NOT returned)
+        try:
+            if "://" in uri and "@" in uri:
+                before_at = uri.split("://")[1].split("@")[0]
+                safe = uri.replace(before_at, "***:***")
+            else:
+                safe = "***"
+            print(f"[INFO] MongoDB connection string loaded: {safe}")
+        except Exception:
+            pass
 
         return uri
 
+    # ---- CONNECT ---
     def connect(self):
-        """Establish database connection"""
-        if self._client is None:
-            try:
-                uri = self.connection_string
-                if not uri:
-                    return False
+        """Establish database connection and return success boolean."""
+        if self._client is not None:
+            return True  # Already connected
 
-                self._client = MongoClient(
-                    uri,
-                    serverSelectionTimeoutMS=30000,
-                    connectTimeoutMS=20000,
-                    socketTimeoutMS=20000,
-                    maxPoolSize=10,
-                )
+        uri = self.connection_string
+        if not uri:
+            return False
 
-                # Test the connection
-                self._client.server_info()
-                self._db = self._client[self.database_name]
-
-                return True
-
-            except ConnectionFailure as e:
-                st.error(f" Failed to connect to MongoDB: {str(e)}")
-                self._client = None
-                return False
-            except Exception as e:
-                st.error(f" Database connection error: {str(e)}")
-                self._client = None
-                return False
-
-        return True
-
-    def disconnect(self):
-        """Close database connection"""
-        if self._client:
-            self._client.close()
-            self._client = None
-            self._db = None
-
-    def get_database(self):
-        """Get database instance"""
-        if self.connect():
-            return self._db
-        return None
-
-    def get_collection(self, collection_name):
-        """Get a specific collection"""
-        db = self.get_database()
-        if db is not None:
-            return db[collection_name]
-        return None
-
-    def health_check(self):
-        """Check database connection health"""
         try:
-            if self._client:
-                # Ping the database
+            self._client = MongoClient(
+                uri,
+                serverSelectionTimeoutMS=30000,
+                connectTimeoutMS=20000,
+                socketTimeoutMS=20000,
+                maxPoolSize=10,
+            )
+
+            # Will raise if unreachable
+            self._client.server_info()
+
+            self._db = self._client[self.database_name]
+            return True
+
+        except ConnectionFailure as e:
+            st.error(f"Failed to connect to MongoDB: {str(e)}")
+            self._client = None
+            return False
+
+        except Exception as e:
+            st.error(f"Database connection error: {str(e)}")
+            self._client = None
+            return False
+
+    # ----  DISCONNECT ----
+    def disconnect(self):
+        """Close active MongoDB client."""
+        if self._client:
+            try:
+                self._client.close()
+            finally:
+                self._client = None
+                self._db = None
+
+    # ---- DATABASE + COLLECTION ACCESS ----
+    def get_database(self):
+        """Return database instance, or None if unavailable."""
+        return self._db if self.connect() else None
+
+    def get_collection(self, name: str):
+        """Return collection reference, or None."""
+        db = self.get_database()
+        # FIX: Use 'is not None' instead of truthiness test
+        # PyMongo objects don't support bool() / truth value testing
+        return db[name] if db is not None else None
+
+    # ---- HEALTH CHECK ----
+    def health_check(self):
+        try:
+            if self._client is not None:
                 self._client.admin.command("ping")
                 return True
         except Exception as e:
             st.error(f"Database health check failed: {str(e)}")
         return False
 
+    # ---- INDEXES ----
     def create_indexes(self):
-        """Create database indexes for better performance"""
+        """Create performance indexes for all collections."""
+        db = self.get_database()
+        if db is None:
+            return False
+
         try:
-            db = self.get_database()
-            if db is not None:
-                # Create indexes for users collection
-                users = db["users"]
-                users.create_index("username", unique=True)
-                users.create_index("email", unique=True)
-                users.create_index("created_at")
-                users.create_index("last_login")
+            # Users
+            users = db["users"]
+            users.create_index("username", unique=True)
+            users.create_index("email", unique=True)
+            users.create_index("created_at")
+            users.create_index("last_login")
 
-                # Create indexes for dashboard collection
-                dashboard = db["dashboard_data"]
-                dashboard.create_index("user_id")
-                dashboard.create_index("created_at")
-                
-                # Create indexes for portfolios collection
-                portfolios = db["portfolios"]
-                portfolios.create_index("user_id")
-                portfolios.create_index("created_at")
-                portfolios.create_index("portfolio_name")
+            # Dashboard data
+            dash = db["dashboard_data"]
+            dash.create_index("user_id")
+            dash.create_index("created_at")
 
-                return True
+            # Portfolios
+            portfolios = db["portfolios"]
+            portfolios.create_index("user_id")
+            portfolios.create_index("created_at")
+            portfolios.create_index("portfolio_name")
+
+            print("[INFO] MongoDB indexes created successfully.")
+            return True
+
         except Exception as e:
             st.warning(f"Could not create indexes: {str(e)}")
-        return False
+            return False
 
 
-# Global database configuration instance
+# ---- GLOBAL INSTANCE ----
 db_config = DatabaseConfig()
 
 
-# Convenience functions for backward compatibility
+# ---- BACKWARD-COMPATIBLE HELPERS ----
 def get_db():
-    """Get database instance"""
     return db_config.get_database()
 
 
 def get_users_collection():
-    """Get users collection"""
     return db_config.get_collection("users")
 
 
 def get_dashboard_collection():
-    """Get dashboard collection"""
     return db_config.get_collection("dashboard_data")
 
 
 def get_portfolios_collection():
-    """Get portfolios collection"""
     return db_config.get_collection("portfolios")
 
 
 def initialize_database():
-    """Initialize database with indexes and basic setup"""
+    """Initialize DB connection + create indexes."""
     if db_config.connect():
         db_config.create_indexes()
         return True

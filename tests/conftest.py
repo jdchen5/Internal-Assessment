@@ -1,140 +1,121 @@
 """
-Test configuration file for pytest
+Simplified test configuration file for pytest
 """
 import pytest
 import sys
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, MagicMock, patch
+from datetime import datetime, timezone
+
 
 # Add src directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 
-@pytest.fixture
-def mock_streamlit():
-    """Mock streamlit components for testing"""
-    with patch.dict('sys.modules', {
-        'streamlit': Mock(),
-    }):
-        import streamlit as st
-        
-        # Mock common streamlit functions
-        st.title = Mock()
-        st.text_input = Mock()
-        st.button = Mock()
-        st.columns = Mock(return_value=[Mock(), Mock()])
-        st.error = Mock()
-        st.success = Mock()
-        st.warning = Mock()
-        st.info = Mock()
-        st.markdown = Mock()
-        st.write = Mock()
-        st.subheader = Mock()
-        st.metric = Mock()
-        st.tabs = Mock(return_value=[Mock(), Mock(), Mock(), Mock()])
-        st.progress = Mock()
-        st.caption = Mock()
-        st.divider = Mock()
-        st.expander = Mock()
-        st.selectbox = Mock()
-        st.checkbox = Mock()
-        st.form = Mock()
-        st.form_submit_button = Mock()
-        st.container = Mock()
-        st.balloons = Mock()
-        st.rerun = Mock()
-        st.stop = Mock()
-        st.set_page_config = Mock()
-        
-        # Mock session state
-        st.session_state = {}
-        
-        yield st
+class MockSessionState:
+    """Mock Streamlit session state that supports both dict and attribute access"""
+    def __init__(self):
+        self._data = {}
+    
+    def __getattr__(self, key):
+        if key.startswith('_'):
+            return object.__getattribute__(self, key)
+        return self._data.get(key)
+    
+    def __setattr__(self, key, value):
+        if key.startswith('_'):
+            object.__setattr__(self, key, value)
+        else:
+            self._data[key] = value
+    
+    def __contains__(self, key):
+        return key in self._data
+    
+    def __getitem__(self, key):
+        return self._data[key]
+    
+    def __setitem__(self, key, value):
+        self._data[key] = value
+    
+    def get(self, key, default=None):
+        return self._data.get(key, default)
 
 
 @pytest.fixture
-def mock_database_manager():
-    """Mock database manager for testing"""
-    with patch('login.db_manager') as mock_db_manager:
-        mock_collection = Mock()
-        mock_db_manager.get_users_collection.return_value = mock_collection
-        mock_db_manager.get_dashboard_collection.return_value = mock_collection
-        yield mock_db_manager, mock_collection
+def mock_session_state():
+    """Provide a mock session state for tests"""
+    return MockSessionState()
 
 
 @pytest.fixture
-def sample_user_data():
+def mock_collection():
+    """Mock MongoDB collection with basic operations"""
+    collection = MagicMock()
+    collection.find_one.return_value = None
+    collection.insert_one.return_value = MagicMock(inserted_id="test_id")
+    collection.update_one.return_value = MagicMock(modified_count=1)
+    collection.delete_one.return_value = MagicMock(deleted_count=1)
+    collection.find.return_value = MagicMock(sort=MagicMock(return_value=[]))
+    return collection
+
+
+@pytest.fixture
+def sample_user():
     """Sample user data for testing"""
-    from datetime import datetime
     return {
         "username": "testuser",
-        "password": "hashed_password_here",
-        "salt": "random_salt_here",
+        "password": "testpass123",  # Plain text as per your implementation
         "email": "test@example.com",
         "role": "user",
-        "created_at": datetime(2023, 1, 1),
-        "last_login": datetime(2023, 12, 1),
-        "is_active": True,
-        "failed_login_attempts": 0,
-        "account_locked_until": None
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "last_login": datetime(2024, 1, 15, tzinfo=timezone.utc),
+        "is_active": True
     }
 
 
 @pytest.fixture
-def mock_environment_variables():
-    """Mock environment variables for testing"""
-    env_vars = {
-        'MONGODB_URI': 'mongodb://test:test@localhost:27017/test_db',
-        'DATABASE_NAME': 'test_db',
-        'SECRET_KEY': 'test-secret-key',
-        'SALT_ROUNDS': '12'
+def sample_portfolio():
+    """Sample portfolio data for testing"""
+    return {
+        "_id": "portfolio_123",
+        "user_id": "testuser",
+        "portfolio_name": "Test Portfolio",
+        "countries": ["United States"],
+        "stocks": [
+            {"symbol": "AAPL", "name": "Apple Inc.", "purchase_price": 150.00, "shares": 10}
+        ],
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "is_active": True
     }
-    
-    with patch.dict(os.environ, env_vars, clear=True):
-        yield env_vars
 
 
 @pytest.fixture
-def mock_pymongo():
-    """Mock pymongo for database testing"""
-    with patch('pymongo.MongoClient') as mock_client:
-        mock_database = Mock()
-        mock_collection = Mock()
-        
-        mock_client.return_value = mock_client
-        mock_client.__getitem__.return_value = mock_database
-        mock_database.__getitem__.return_value = mock_collection
-        mock_client.server_info = Mock()
-        mock_client.admin.command = Mock()
-        mock_client.close = Mock()
-        
-        yield mock_client, mock_database, mock_collection
+def sample_stock():
+    """Sample stock data for testing"""
+    return {
+        "symbol": "AAPL",
+        "name": "Apple Inc.",
+        "purchase_price": 150.00,
+        "shares": 10
+    }
 
 
 @pytest.fixture(autouse=True)
-def clean_imports():
-    """Clean imports before each test to avoid module caching issues"""
-    modules_to_remove = []
-    for module_name in sys.modules:
-        if module_name.startswith(('src.', 'database', 'login', 'ui', 'main')):
-            modules_to_remove.append(module_name)
-    
-    for module_name in modules_to_remove:
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-    
-    yield
-    
-    # Clean up after test
-    for module_name in modules_to_remove:
-        if module_name in sys.modules:
-            del sys.modules[module_name]
+def mock_streamlit():
+    """Auto-mock streamlit to prevent UI-related errors"""
+    with patch('streamlit.error'), \
+         patch('streamlit.warning'), \
+         patch('streamlit.info'), \
+         patch('streamlit.success'), \
+         patch('streamlit.rerun'), \
+         patch('streamlit.set_page_config'):
+        yield
 
 
 # Test markers
 def pytest_configure(config):
     """Configure pytest with custom markers"""
-    config.addinivalue_line("markers", "unit: mark test as a unit test")
-    config.addinivalue_line("markers", "integration: mark test as an integration test")
-    config.addinivalue_line("markers", "slow: mark test as slow running")
-    config.addinivalue_line("markers", "database: mark test as requiring database")
+    config.addinivalue_line("markers", "unit: Unit tests")
+    config.addinivalue_line("markers", "integration: Integration tests")
+    config.addinivalue_line("markers", "skip_ui: Skip UI tests (too complex to mock)")
+    config.addinivalue_line("markers", "fast: Fast-running tests")

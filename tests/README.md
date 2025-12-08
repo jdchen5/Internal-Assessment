@@ -1,6 +1,6 @@
-# Test Suite for Secure Login Application
+# Test Suite for Stock Portfolio Management Application
 
-This directory contains comprehensive test cases for the authentication application.
+This directory contains comprehensive test cases for the portfolio management application.
 
 ## Test Structure
 
@@ -10,8 +10,8 @@ tests/
 ├── conftest.py                 # Pytest configuration and fixtures
 ├── test_database.py           # Database module tests
 ├── test_login.py              # Authentication logic tests
-├── test_ui.py                 # User interface tests
-├── test_main.py               # Main application tests
+├── test_ui.py                 # User interface tests (refactored)
+├── test_main.py               # Main application tests (refactored)
 └── README.md                  # This file
 ```
 
@@ -27,45 +27,73 @@ tests/
 
 - **Global functions tests:**
   - Database instance retrieval
-  - Collection access
+  - Collection access (users, portfolios, dashboard_data)
   - Database initialization
 
 ### 2. Login Module (`test_login.py`)
-- **Password functions:**
-  - Password hashing with/without salt
-  - Password verification
-  - Password strength validation
-
 - **User management:**
   - User registration with validation
   - User authentication
-  - Account locking mechanisms
-  - Login attempt tracking
   - Password change functionality
+  - Email validation
 
-- **Email validation:**
-  - Valid/invalid email format testing
+- **Portfolio management:**
+  - Portfolio creation and deletion
+  - Stock addition and removal
+  - Portfolio retrieval and updates
+  - User portfolio queries
 
-### 3. UI Module (`test_ui.py`)
-- **Password strength calculator:**
-  - Different strength levels
-  - Character variety scoring
-  - Length-based scoring
+### 3. UI Module (`test_ui.py`) - REFACTORED
+- **Utility functions:**
+  - Logout handling
+  - Percentage formatting with colors
+  - Portfolio value calculation
+  - Company news link generation
+
+- **Data fetching:**
+  - Stock data retrieval from yfinance
+  - Historical stock data fetching
+  - Stock search functionality
+  - Multi-stock data fetching
+
+- **Prediction & Analytics:**
+  - Linear regression predictions
+  - Portfolio-level predictions
+  - Stock price forecasting
+
+- **UI Components:**
+  - Sidebar rendering
+  - Stock metrics display
+  - Stock charts (price and volume)
+  - Delete confirmation dialogs
 
 - **Page functions:**
   - Login page behavior
   - Registration page functionality
-  - Dashboard display
-  - Navigation testing
+  - Dashboard with portfolio overview
+  - Stock analysis page
+  - Portfolio management pages
+  - Stock search and addition
 
-### 4. Main Module (`test_main.py`)
+### 4. Main Module (`test_main.py`) - REFACTORED
 - **Application routing:**
-  - Page navigation
+  - All page navigation (12+ routes)
   - Session state management
   - Database initialization handling
 
+- **New routes tested:**
+  - stock_analysis
+  - portfolios
+  - create_portfolio
+  - my_stocks
+  - stock_search
+  - edit_portfolio
+  - portfolio_details
+  - portfolio_analytics
+  - media_portfolio_view
+
 - **Configuration:**
-  - Streamlit page setup
+  - Streamlit page setup (wide layout)
   - CSS styling application
   - Connection status indicators
 
@@ -74,7 +102,7 @@ tests/
 ### Prerequisites
 Install test dependencies:
 ```bash
-pip install pytest pytest-mock
+pip install pytest pytest-mock pandas numpy yfinance
 ```
 
 ### Run All Tests
@@ -101,7 +129,17 @@ pytest --cov=src --cov-report=html
 pytest -m unit          # Run only unit tests
 pytest -m integration   # Run only integration tests
 pytest -m database      # Run only database tests
+pytest -m ui            # Run only UI tests
+pytest -m api           # Run only API-related tests
 pytest -m slow          # Run only slow tests
+```
+
+### Run Specific Test Classes
+```bash
+pytest tests/test_ui.py::TestUtilityFunctions
+pytest tests/test_ui.py::TestDataFetching
+pytest tests/test_ui.py::TestPredictionAnalytics
+pytest tests/test_main.py::TestRoutingLogic
 ```
 
 ## Test Categories
@@ -123,25 +161,36 @@ The tests extensively use mocking to:
 - Isolate units under test
 - Simulate database responses
 - Mock Streamlit components
+- Mock yfinance API calls
 - Control external dependencies
 
 ## Test Fixtures
 
 ### Available Fixtures (in `conftest.py`)
-- `mock_streamlit`: Mocks all Streamlit components
+
+#### Core Fixtures
+- `mock_streamlit`: Mocks all Streamlit components including new features (st.cache_data, st.dialog, etc.)
 - `mock_database_manager`: Mocks database manager and collections
-- `sample_user_data`: Provides sample user data for testing
-- `mock_environment_variables`: Sets up test environment variables
 - `mock_pymongo`: Mocks PyMongo client and database operations
+- `mock_environment_variables`: Sets up test environment variables
+
+#### Data Fixtures
+- `sample_user_data`: Provides sample user data for testing
+- `sample_portfolio_data`: Provides sample portfolio with stocks
+- `sample_stock_data`: Provides sample pandas DataFrame with stock prices
+
+#### External API Fixtures
+- `mock_yfinance`: Mocks yfinance library for stock data fetching
+- `mock_constants`: Mocks the constants module with stock symbols
 
 ## Common Test Patterns
 
 ### Testing Database Operations
 ```python
-@patch('login.db_manager')
-def test_user_function(self, mock_db_manager):
+@patch('login.get_users_collection')
+def test_user_function(self, mock_get_collection):
     mock_collection = MagicMock()
-    mock_db_manager.get_users_collection.return_value = mock_collection
+    mock_get_collection.return_value = mock_collection
     
     # Test your function
     result = your_function()
@@ -165,6 +214,21 @@ def test_ui_component(self, mock_text_input, mock_button):
     mock_button.assert_called()
 ```
 
+### Testing Stock Data Fetching
+```python
+@patch('yfinance.download')
+def test_stock_fetch(self, mock_download):
+    # Create sample data
+    dates = pd.date_range('2024-01-01', periods=30)
+    mock_download.return_value = pd.DataFrame({
+        'Close': [100, 105, 110]
+    }, index=dates)
+    
+    result = get_stock_data('AAPL', 30)
+    
+    self.assertIsInstance(result, pd.DataFrame)
+```
+
 ## Best Practices
 
 1. **Isolation**: Each test should be independent and not rely on other tests
@@ -172,23 +236,100 @@ def test_ui_component(self, mock_text_input, mock_button):
 3. **Clear Names**: Test names should clearly describe what is being tested
 4. **Arrange-Act-Assert**: Structure tests with clear setup, execution, and verification phases
 5. **Edge Cases**: Test both happy path and error conditions
+6. **Data Fixtures**: Use fixtures for consistent test data
+7. **Cache Handling**: Mock st.cache_data decorator to avoid caching during tests
+
+## New Features Tested
+
+### Portfolio Features
+- Multi-country portfolio creation
+- Stock purchase with shares and price tracking
+- Portfolio value calculations
+- Portfolio predictions using linear regression
+
+### Stock Analysis
+- Real-time stock data fetching
+- Historical data analysis
+- Price predictions (1-year forecast)
+- Stock metrics display (52-week high/low, volume)
+- Moving averages
+
+### Community Features
+- View other users' portfolios
+- Global stock market dashboard
+- Multi-country stock support
 
 ## Troubleshooting
 
 ### Common Issues
 
-1. **Import Errors**: Make sure the `src` directory is in the Python path
-2. **Mock Issues**: Ensure mocks are patched at the correct location
-3. **Streamlit Warnings**: Some Streamlit warnings are normal and filtered out
+1. **Import Errors**: 
+   - Ensure the `src` directory is in the Python path
+   - Check that constants.py is available or mocked
+
+2. **Mock Issues**: 
+   - Ensure mocks are patched at the correct location
+   - Remember that ui.py imports need to be mocked with full path
+
+3. **Pandas/NumPy Errors**:
+   - Ensure pandas and numpy are installed
+   - Check that DataFrame operations are properly mocked
+
+4. **Streamlit Warnings**: 
+   - Some Streamlit warnings are normal and filtered out
+   - st.cache_data should be mocked in conftest.py
+
+5. **yfinance Timeouts**:
+   - All yfinance calls should be mocked in tests
+   - Use mock_yfinance fixture for consistent behavior
 
 ### Running Individual Tests
 ```bash
-pytest tests/test_database.py::TestDatabaseConfig::test_connection_string_with_env_var
+# Run a specific test class
+pytest tests/test_ui.py::TestUtilityFunctions
+
+# Run a specific test method
+pytest tests/test_ui.py::TestUtilityFunctions::test_handle_logout
+
+# Run with verbose output
+pytest -v tests/test_ui.py
 ```
 
 ### Debugging Tests
 ```bash
-pytest -s -vv tests/test_login.py  # Show print statements and verbose output
+# Show print statements and verbose output
+pytest -s -vv tests/test_ui.py
+
+# Stop on first failure
+pytest -x tests/
+
+# Show locals in tracebacks
+pytest -l tests/test_main.py
+```
+
+## Coverage Goals
+
+Target coverage by module:
+- **database.py**: >90% (well-tested core functionality)
+- **login.py**: >85% (authentication and portfolio management)
+- **ui.py**: >70% (UI components with many external dependencies)
+- **main.py**: >80% (routing logic)
+
+Run coverage report:
+```bash
+pytest --cov=src --cov-report=term-missing
+```
+
+## CI/CD Integration
+
+These tests are designed to run in CI/CD pipelines:
+
+```yaml
+# Example GitHub Actions
+- name: Run tests
+  run: |
+    pip install -r requirements-test.txt
+    pytest --cov=src --cov-report=xml
 ```
 
 ## Contributing
@@ -197,5 +338,30 @@ When adding new tests:
 1. Follow the existing naming conventions
 2. Add appropriate docstrings
 3. Use the existing fixtures where possible
-4. Add new markers if needed
-5. Update this README if adding new test categories
+4. Add new fixtures to conftest.py if needed
+5. Add new markers if needed
+6. Update this README with new test coverage
+7. Ensure all mocks are properly cleaned up
+8. Test both success and failure paths
+
+## Test Dependencies
+
+Required packages:
+```
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pandas>=1.5.0
+numpy>=1.23.0
+```
+
+Optional for coverage:
+```
+pytest-cov>=4.0.0
+```
+
+## Notes
+
+- The refactored UI includes real-time stock data fetching, so tests mock yfinance extensively
+- Portfolio predictions use linear regression, tested with sample data
+- Session state management is critical for routing, thoroughly tested
+- All external API calls (yfinance, database) are mocked for speed and reliability
