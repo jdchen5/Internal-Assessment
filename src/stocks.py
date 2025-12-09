@@ -180,3 +180,137 @@ def linear_prediction(price_series: pd.Series, future_days: int = 365) -> dict |
         "reg_line": reg_line,
         "r_squared": float(r_squared),
     }
+
+# ============================================================================
+# STOCK PREDICTOR CLASS (OOP Implementation)
+# ============================================================================
+
+class StockPredictor:
+    """
+    OOP wrapper for stock price prediction using linear regression.
+    Features:
+    1. Encapsulates prediction logic and state
+    2. Demonstrates OOP principles (encapsulation, abstraction)
+    3. Maintains prediction history for a single stock
+    4. Provides clean interface for prediction operations
+    
+    Attributes:
+        _symbol: Stock ticker symbol
+        _price_history: Historical price data
+        _prediction: Cached prediction results
+    """
+    
+    def __init__(self, symbol: str):
+        """
+        Initialize predictor for a specific stock.
+        
+        Time Complexity: O(1)
+        Space Complexity: O(1)
+        
+        Args:
+            symbol: Stock ticker symbol (e.g., "AAPL")
+        """
+        self._symbol = symbol
+        self._price_history = None
+        self._prediction = None
+    
+    @property
+    def symbol(self):
+        """Get stock symbol (read-only)."""
+        return self._symbol
+    
+    @property
+    def has_prediction(self):
+        """Check if prediction has been generated."""
+        return self._prediction is not None
+    
+    def load_history(self, years: int = 2):
+        """
+        Load historical price data for the stock.
+        
+        Time Complexity: O(1) for API call
+        Space Complexity: O(n) where n = trading days
+        
+        Args:
+            years: Number of years of history to load
+            
+        Returns:
+            bool: True if data loaded successfully
+        """
+        self._price_history = fetch_long_history(self._symbol, years=years)
+        return not self._price_history.empty
+    
+    def predict(self, future_days: int = 365):
+        """
+        Generate price prediction using linear regression.
+        
+        Time Complexity: O(n) where n = historical data points
+        Space Complexity: O(n) for regression calculations
+        
+        Args:
+            future_days: Days into future to predict
+            
+        Returns:
+            dict or None: Prediction results
+        """
+        if self._price_history is None or self._price_history.empty:
+            if not self.load_history():
+                return None
+        
+        price_series = self._price_history["Close"].dropna()
+        
+        if len(price_series) < 30:
+            return None
+        
+        self._prediction = linear_prediction(price_series, future_days)
+        return self._prediction
+    
+    def get_current_price(self):
+        """
+        Get current stock price.
+        
+        Returns:
+            float or None: Current price
+        """
+        if self._prediction:
+            return self._prediction.get("current_price")
+        return fetch_current_price(self._symbol)
+    
+    def get_predicted_price(self):
+        """
+        Get predicted future price.
+        
+        Returns:
+            float or None: Predicted price
+        """
+        if not self._prediction:
+            self.predict()
+        return self._prediction.get("predicted_price") if self._prediction else None
+    
+    def get_prediction_summary(self):
+        """
+        Get formatted prediction summary.
+        
+        Returns:
+            dict: Summary with current, predicted, change, and trend
+        """
+        if not self._prediction:
+            self.predict()
+        
+        if not self._prediction:
+            return {"error": "Unable to generate prediction"}
+        
+        current = self._prediction["current_price"]
+        predicted = self._prediction["predicted_price"]
+        change = predicted - current
+        pct = (change / current * 100) if current > 0 else 0
+        
+        return {
+            "symbol": self._symbol,
+            "current_price": current,
+            "predicted_price": predicted,
+            "change": change,
+            "change_percent": pct,
+            "trend": "Upward" if change > 0 else "Downward",
+            "r_squared": self._prediction.get("r_squared", 0)
+        }

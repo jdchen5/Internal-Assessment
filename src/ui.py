@@ -25,7 +25,8 @@ from renderers import (
     render_stock_table,
     render_stock_performance_grid,
 )
-from algorithms import insertion_sort_portfolios, binary_search, manual_linear_regression
+from algorithms import insertion_sort_portfolios
+from stocks import StockPredictor
 
 def handle_logout():
     st.session_state.logged_in = False
@@ -474,14 +475,38 @@ def stock_analysis_page(go_to, get_user_info, change_password):
     # ---- PREDICTION ----
     st.subheader("Price Prediction (Linear Regression)")
 
-    price_series = df["Close"].dropna()
-    pred = linear_prediction(price_series, future_days=365)
+    predictor = StockPredictor(selected)
 
-    if pred:
-        render_prediction_summary(selected, price_series)
-        render_prediction_chart(price_series, pred)
+    # Load historical data and generate prediction
+    if predictor.load_history(years=10):
+        pred = predictor.predict(future_days=365)
+        
+        if pred:
+            # Display prediction summary using class method
+            summary = predictor.get_prediction_summary()
+            
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Current Price", f"${summary['current_price']:.2f}")
+            with col2:
+                st.metric(
+                    "Predicted (1 Year)", 
+                    f"${summary['predicted_price']:.2f}",
+                    f"{summary['change']:+.2f} ({summary['change_percent']:+.2f}%)"
+                )
+            with col3:
+                st.metric("Trend", summary['trend'])
+            
+            # Also show R² score
+            st.write(f"**Model R² Score:** {summary['r_squared']:.4f}")
+            
+            # Use existing chart renderer
+            price_series = df["Close"].dropna()
+            render_prediction_chart(price_series, pred)
+        else:
+            st.warning("Not enough historical data to generate prediction.")
     else:
-        st.warning("Not enough historical data to generate prediction.")
+        st.warning(f"Could not load historical data for {selected}")
 
     st.divider()
 
